@@ -161,7 +161,7 @@ void Processor808::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         sine[(size_t) i] = std::sin (2.0 * juce::MathConstants<double>::pi * phase);
         phase += inc; if (phase >= 1) phase -= 1;
 
-        if (ampStage == 0) { ampV += ampInc; if (++ampCount >= rampN) { ampV = 1 + (ampV - 1); ampStage = 1; } }
+        if (ampStage == 0) { ampV += ampInc; if (++ampCount >= rampN) ampStage = 1; }
         else if (ampStage == 1) { ampV = 1 + (ampV - 1) * c1; if (++ampCount >= settleEnd) ampStage = 2; }
         else if (ampStage == 2) { ampV *= c2; if (ampV < 1e-6f) { ampV = 0; ampStage = -1; } }
         amp[(size_t) i] = ampV;
@@ -201,7 +201,9 @@ void Processor808::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
         if ((i & 15) == 0) tone.set (ah::LP, tf, 0.8f, fs);
         const float body = tone.process (sh[i]) * drvG.next() + sine[(size_t) i] * subG.next();
         const float y = (body * amp[(size_t) i] + click[(size_t) i]) * outG.next();
-        oL[i] = y; if (oR) oR[i] = y;
+        const float a = std::abs (y);   // soft ceiling at 0 dBFS (the browser hard-clipped here)
+        const float yc = a <= 0.9f ? y : std::copysign (0.9f + 0.1f * std::tanh ((a - 0.9f) / 0.1f), y);
+        oL[i] = yc; if (oR) oR[i] = yc;
         scope[(size_t) sw] = y; sw = (sw + 1) & 8191;
     }
     scopeW = sw;
