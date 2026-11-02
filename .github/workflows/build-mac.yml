@@ -1,0 +1,44 @@
+name: Build Mac plugin
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode
+
+      - name: Build VST3 and AU (universal, Apple Silicon and Intel)
+        run: cmake --build build --config Release --target AH808_VST3 AH808_AU -- -quiet
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          ART=build/AH808_artefacts/Release
+          mkdir -p 808
+          cp -R "$ART/VST3/808.vst3" 808/
+          cp -R "$ART/AU/808.component" 808/
+          codesign --force --deep --sign - 808/808.vst3
+          codesign --force --deep --sign - 808/808.component
+          lipo -info 808/808.vst3/Contents/MacOS/808
+          cp INSTALL.txt install.command 808/
+          chmod +x 808/install.command
+          ditto -c -k --keepParent 808 808-mac.zip
+
+      - name: Validate AU with Apple's auval
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R 808/808.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu A808 Afhr
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 808-mac
+          path: 808-mac.zip
